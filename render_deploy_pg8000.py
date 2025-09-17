@@ -93,10 +93,11 @@ class RenderPG8000MQTTBridge:
                 'port': port,
                 'database': database,
                 'user': user,
-                'password': password
+                'password': password,
+                'ssl_context': True  # Enable SSL for Neon
             }
             
-            logger.info(f"✅ Render.com: Parsed database connection to {host}:{port}/{database}")
+            logger.info(f"✅ Render.com: Parsed database connection to {host}:{port}/{database} with SSL")
             
         except Exception as e:
             logger.error(f"❌ Render.com: Failed to parse DATABASE_URL: {e}")
