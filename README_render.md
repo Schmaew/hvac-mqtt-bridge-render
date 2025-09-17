@@ -9,7 +9,7 @@
 3. **Create Web Service** → Connect this repo
 4. **Configure**:
    - Build Command: `pip install -r requirements_render.txt`
-   - Start Command: `python render_deploy.py`
+   - Start Command: `python render_deploy_flask.py`
 5. **Add Environment Variables** (see below)
 
 ## 🔧 Environment Variables
