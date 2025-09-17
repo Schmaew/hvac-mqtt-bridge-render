@@ -1,0 +1,103 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Node modules (if any)
+node_modules/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Test files (exclude from production)
+test_*.py
+*_test.py
+mqtt_test_publisher*.py
+test_*.sql
+setup_test_*.py
+mqtt_simple_test.py
+mqtt_esp32_format_test.py
+
+# Development scripts (exclude from production)
+cleanup_duplicate_tables.sql
+setup_*.py
+mqtt_monitor.py
+mqtt_simple_monitor.py
+
+# Cloud deployment files for other platforms
+cloud_run/
+systemd/
+deploy_raspberry_pi.sh
+railway.json
+railway_deploy.py
+gcp_mqtt_bridge.py
+mqtt_neon_bridge_cloud.py
+mqtt_neon_bridge_optimized.py
+
+# Documentation (keep only essential ones)
+GOOGLE_CLOUD_SETUP.md
+RAILWAY_SETUP.md
+
+# Prisma (if not using)
+prisma/
+*_prisma.py
+requirements_prisma.txt
+
+# Main scripts we don't need for Render
+main.py
+main_prisma.py
+mqtt_neon_bridge.py
