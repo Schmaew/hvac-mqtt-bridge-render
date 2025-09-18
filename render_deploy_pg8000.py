@@ -203,6 +203,11 @@ class RenderPG8000MQTTBridge:
             })
     
     def setup_mqtt(self):
+        """Set up MQTT client with SSL and callbacks."""
+        self.mqtt_client = mqtt.Client()
+        self.mqtt_client.username_pw_set(self.mqtt_username, self.mqtt_password)
+        
+        # Configure SSL/TLS
         context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
