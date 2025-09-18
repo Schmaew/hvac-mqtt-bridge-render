@@ -30,33 +30,32 @@ logger = logging.getLogger(__name__)
 
 class RenderPG8000MQTTBridge:
     def __init__(self):
-        self.mqtt_client = mqtt.Client()
-        self.db_connection_params = None
-        self.connected = False
-        self.running = True
-        self.message_queue = []
-        self.last_activity = time.time()
-        
-        # Flask app setup
+        """Initialize the MQTT-Neon bridge."""
         self.app = Flask(__name__)
         CORS(self.app)
         
-        # Render.com settings
-        self.port = int(os.getenv("PORT", "10000"))
+        # Load environment variables
+        load_dotenv()
         
-        # MQTT settings
-        self.broker = os.getenv("MQTT_BROKER")
-        self.mqtt_port = int(os.getenv("MQTT_PORT", "8883"))
-        self.username = os.getenv("MQTT_USERNAME")
-        self.password = os.getenv("MQTT_PASSWORD")
-        self.topic_prefix = os.getenv("MQTT_TOPIC_PREFIX", "hvac/sensors")
+        # Configuration
+        self.database_url = os.getenv('DATABASE_URL')
+        self.mqtt_broker = os.getenv('MQTT_BROKER', 'f81277a8.ala.us-east-1.emqxsl.com')
+        self.mqtt_port = int(os.getenv('MQTT_PORT', 8883))
+        self.mqtt_username = os.getenv('MQTT_USERNAME', 'admin')
+        self.mqtt_password = os.getenv('MQTT_PASSWORD', 'admin123')
+        self.topic_prefix = os.getenv('MQTT_TOPIC_PREFIX', 'hvac/sensors')
+        self.port = int(os.getenv('PORT', 10000))
         
-        # Database settings
-        self.database_url = os.getenv("DATABASE_URL")
-        
-        # Performance settings optimized for Render free tier
-        self.batch_size = int(os.getenv("BATCH_SIZE", "20"))
-        self.batch_timeout = int(os.getenv("BATCH_TIMEOUT", "2"))
+        # State variables
+        self.db_connection_params = None
+        self.mqtt_client = None
+        self.connected = False
+        self.message_queue = []
+        self.last_activity = time.time()
+        self.batch_size = 20
+        self.batch_timeout = 2
+        self.last_keepalive = time.time()
+        self.keepalive_interval = 300  # 5 minutes
         
         self.setup_mqtt()
         self.setup_flask_routes()
@@ -204,27 +203,22 @@ class RenderPG8000MQTTBridge:
             })
     
     def setup_mqtt(self):
-        """Setup MQTT client optimized for Render."""
-        # SSL setup
         context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
         self.mqtt_client.tls_set_context(context)
         
-        # Credentials
-        self.mqtt_client.username_pw_set(self.username, self.password)
-        
-        # Render optimized settings
+        # Optimize for cold starts
+        self.mqtt_client.reconnect_delay_set(min_delay=1, max_delay=10)
+        self.mqtt_client.socket_timeout = 30
         self.mqtt_client.keepalive = 60
-        self.mqtt_client.max_inflight_messages_set(10)
-        self.mqtt_client.max_queued_messages_set(50)
         
-        # Callbacks
-        self.mqtt_client.on_connect = self._on_mqtt_connect
-        self.mqtt_client.on_message = self._on_mqtt_message
-        self.mqtt_client.on_disconnect = self._on_mqtt_disconnect
+        # Set callbacks
+        self.mqtt_client.on_connect = self.on_mqtt_connect
+        self.mqtt_client.on_message = self.on_mqtt_message
+        self.mqtt_client.on_disconnect = self.on_mqtt_disconnect
     
-    def _on_mqtt_connect(self, client, userdata, flags, rc):
+    def on_mqtt_connect(self, client, userdata, flags, rc):
         """MQTT connection callback."""
         if rc == 0:
             self.connected = True
@@ -479,8 +473,54 @@ class RenderPG8000MQTTBridge:
         # Run Flask app
         self.app.run(host='0.0.0.0', port=self.port, debug=False)
 
+    def keepalive_checker(self):
+        """Background thread to send keep-alive requests every 5 minutes."""
+        while True:
+            try:
+                current_time = time.time()
+                if current_time - self.last_keepalive >= self.keepalive_interval:
+                    logger.info("💓 Render.com: Sending keep-alive to prevent sleep")
+                    # Self-ping to keep service awake
+                    import requests
+                    try:
+                        requests.get(f"http://localhost:{self.port}/health", timeout=5)
+                        self.last_keepalive = current_time
+                    except:
+                        # If local request fails, just update timestamp
+                        self.last_keepalive = current_time
+                
+                time.sleep(60)  # Check every minute
+            except Exception as e:
+                logger.error(f"❌ Keep-alive error: {e}")
+                time.sleep(60)
+
+    def run_bridge(self):
+        """Main bridge loop with batch processing."""
+        logger.info("🚀 Render.com: Bridge is running...")
+        logger.info("🌐 Render.com: Flask server on port 10000")
+        logger.info("📡 Render.com: Listening for MQTT messages...")
+        logger.info("💾 Render.com: Storing data in Neon database...")
+        logger.info("💓 Render.com: Auto keep-alive every 5 minutes")
+        logger.info("😴 Render.com: Will sleep after 15min idle (wakes on request)")
+        
+        # Start background batch processor
+        batch_thread = threading.Thread(target=self.batch_processor, daemon=True)
+        batch_thread.start()
+        
+        # Start keep-alive thread
+        keepalive_thread = threading.Thread(target=self.keepalive_checker, daemon=True)
+        keepalive_thread.start()
+        
+        # Connect to MQTT
+        self.connect_mqtt()
+        
+        # Start Flask server
+        logger.info("✅ Render.com: Flask server starting on port 10000")
+        logger.info("💡 Render.com: Auto keep-alive prevents sleep - no manual pinging needed")
+        self.app.run(host='0.0.0.0', port=self.port, debug=False)
+
 # Create bridge instance
 bridge = RenderPG8000MQTTBridge()
 
 if __name__ == "__main__":
-    bridge.run()
+    bridge.run_bridge()
