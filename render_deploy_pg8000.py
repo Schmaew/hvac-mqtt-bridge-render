@@ -414,8 +414,8 @@ class RenderPG8000MQTTBridge:
             logger.error(f"❌ Render.com: MQTT connection failed: {e}")
             return False
     
-    def run_bridge_task(self):
-        """Run the bridge processing task in background thread."""
+    def batch_processor(self):
+        """Background batch processor for MQTT messages."""
         last_batch_time = time.time()
         
         while self.running:
@@ -438,6 +438,11 @@ class RenderPG8000MQTTBridge:
                 time.sleep(5)
             
             time.sleep(0.1)
+    
+    def run_bridge_task(self):
+        """Run the bridge processing task in background thread."""
+        # This method is kept for compatibility but delegates to batch_processor
+        self.batch_processor()
     
     def run(self):
         """Run the Render.com bridge."""
