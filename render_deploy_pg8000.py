@@ -50,12 +50,16 @@ class RenderPG8000MQTTBridge:
         self.db_connection_params = None
         self.mqtt_client = None
         self.connected = False
+        self.running = True
         self.message_queue = []
         self.last_activity = time.time()
         self.batch_size = 20
         self.batch_timeout = 2
         self.last_keepalive = time.time()
         self.keepalive_interval = 300  # 5 minutes
+        
+        # MQTT connection parameters
+        self.broker = self.mqtt_broker
         
         self.setup_mqtt()
         self.setup_flask_routes()
