@@ -220,8 +220,8 @@ class RenderPG8000MQTTBridge:
         
         # Set callbacks
         self.mqtt_client.on_connect = self.on_mqtt_connect
-        self.mqtt_client.on_message = self.on_mqtt_message
-        self.mqtt_client.on_disconnect = self.on_mqtt_disconnect
+        self.mqtt_client.on_message = self._on_mqtt_message
+        self.mqtt_client.on_disconnect = self._on_mqtt_disconnect
     
     def on_mqtt_connect(self, client, userdata, flags, rc):
         """MQTT connection callback."""
