@@ -508,6 +508,10 @@ class RenderPG8000MQTTBridge:
                 logger.error(f"❌ Keep-alive error: {e}")
                 time.sleep(60)
 
+    def run_flask(self):
+        """Run Flask server in separate thread."""
+        self.app.run(host='0.0.0.0', port=self.port, debug=False, use_reloader=False)
+    
     def run_bridge(self):
         """Main bridge loop with batch processing."""
         logger.info("🚀 Render.com: Bridge is running...")
@@ -521,17 +525,26 @@ class RenderPG8000MQTTBridge:
         batch_thread = threading.Thread(target=self.batch_processor, daemon=True)
         batch_thread.start()
         
-        # Start keep-alive thread
-        keepalive_thread = threading.Thread(target=self.keepalive_checker, daemon=True)
+        # Start keep-alive thread (NON-DAEMON for reliability)
+        keepalive_thread = threading.Thread(target=self.keepalive_checker, daemon=False)
         keepalive_thread.start()
         
         # Connect to MQTT
         self.connect_mqtt()
         
-        # Start Flask server
+        # Start Flask server in separate thread
         logger.info("✅ Render.com: Flask server starting on port 10000")
         logger.info("💡 Render.com: Auto keep-alive prevents sleep - no manual pinging needed")
-        self.app.run(host='0.0.0.0', port=self.port, debug=False)
+        flask_thread = threading.Thread(target=self.run_flask, daemon=False)
+        flask_thread.start()
+        
+        # Keep main thread alive
+        try:
+            while self.running:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            logger.info("🛑 Render.com: Shutting down gracefully...")
+            self.running = False
 
 # Create bridge instance
 bridge = RenderPG8000MQTTBridge()
