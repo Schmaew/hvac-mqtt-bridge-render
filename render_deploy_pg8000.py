@@ -411,16 +411,25 @@ class RenderPG8000MQTTBridge:
         """Connect to MQTT broker."""
         try:
             logger.info(f"🔗 Render.com: Connecting to MQTT {self.broker}:{self.mqtt_port}")
+            # Stop any existing loop before reconnecting
+            try:
+                self.mqtt_client.loop_stop()
+            except:
+                pass
+            
             self.mqtt_client.connect(self.broker, self.mqtt_port, 60)
             self.mqtt_client.loop_start()
             return True
         except Exception as e:
             logger.error(f"❌ Render.com: MQTT connection failed: {e}")
+            self.connected = False
             return False
     
     def batch_processor(self):
         """Background batch processor for MQTT messages."""
         last_batch_time = time.time()
+        last_reconnect_attempt = 0
+        reconnect_delay = 30  # Wait 30 seconds between reconnection attempts
         
         while self.running:
             current_time = time.time()
@@ -435,11 +444,12 @@ class RenderPG8000MQTTBridge:
                 self._process_batch(batch)
                 last_batch_time = current_time
             
-            # Reconnect MQTT if disconnected
+            # Reconnect MQTT if disconnected (with delay to prevent spam)
             if not self.connected and self.running:
-                logger.info("🔄 Render.com: Reconnecting MQTT...")
-                self.connect_mqtt()
-                time.sleep(5)
+                if current_time - last_reconnect_attempt >= reconnect_delay:
+                    logger.info("🔄 Render.com: Reconnecting MQTT...")
+                    self.connect_mqtt()
+                    last_reconnect_attempt = current_time
             
             time.sleep(0.1)
     
