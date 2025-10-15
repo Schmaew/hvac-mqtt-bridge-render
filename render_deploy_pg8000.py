@@ -349,7 +349,7 @@ class RenderPG8000MQTTBridge:
                          'return_air_temp', 'comp_current', 'fan_current', 'evap_fan_current',
                          'airflow_velocity', 'pressure', 'vibration_amp', 'vibration_freq',
                          'sound_level', 'dust_concentration', 'refrigerant_flow', 'dht22_humidity',
-                         'bmp280_temperature', 'bmp280_pressure', 'bmp280_altitude']:
+                         'bmp280_temperature', 'bmp280_altitude']:
             if db_field not in mapped_data or mapped_data[db_field] is None:
                 mapped_data[db_field] = data.get(db_field)
         
@@ -375,13 +375,13 @@ class RenderPG8000MQTTBridge:
                 ambient_temp, condenser_temp, evap_temp, supply_air_temp, return_air_temp,
                 comp_current, fan_current, evap_fan_current, airflow_velocity, pressure,
                 vibration_amp, vibration_freq, sound_level, dust_concentration, refrigerant_flow,
-                dht22_humidity, bmp280_temperature, bmp280_pressure, bmp280_altitude
+                dht22_humidity, bmp280_temperature, bmp280_altitude
             ) VALUES (
                 :device_id, :timestamp, :esp_timestamp_raw,
                 :ambient_temp, :condenser_temp, :evap_temp, :supply_air_temp, :return_air_temp,
                 :comp_current, :fan_current, :evap_fan_current, :airflow_velocity, :pressure,
                 :vibration_amp, :vibration_freq, :sound_level, :dust_concentration, :refrigerant_flow,
-                :dht22_humidity, :bmp280_temperature, :bmp280_pressure, :bmp280_altitude
+                :dht22_humidity, :bmp280_temperature, :bmp280_altitude
             )
         """, 
             device_id=device_id, timestamp=timestamp, esp_timestamp_raw=raw_timestamp,
