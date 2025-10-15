@@ -293,25 +293,30 @@ class RenderPG8000MQTTBridge:
         if not self.db_connection_params or not messages:
             return
         
-        conn = None
-        try:
-            conn = self.get_db_connection()
-            if not conn:
-                return
-            
-            for msg in messages:
+        # Process each message with its own connection to avoid pg8000 prepared statement conflicts
+        processed = 0
+        for msg in messages:
+            conn = None
+            try:
+                conn = self.get_db_connection()
+                if not conn:
+                    continue
+                
                 if msg['message_type'] == "data":
                     self._store_sensor_data(conn, msg)
+                    processed += 1
                 elif msg['message_type'] == "heartbeat":
                     self._update_device_status(conn, msg)
-            
-            logger.info(f"✅ Render.com: Processed batch of {len(messages)} messages")
-            
-        except Exception as e:
-            logger.error(f"❌ Render.com: Error processing batch: {e}")
-        finally:
-            if conn:
-                conn.close()
+                    processed += 1
+                    
+            except Exception as msg_error:
+                logger.error(f"❌ Render.com: Error processing {msg['message_type']} from {msg['device_id']}: {msg_error}")
+            finally:
+                if conn:
+                    conn.close()
+        
+        if processed > 0:
+            logger.info(f"✅ Render.com: Processed batch of {processed} messages")
     
     def _store_sensor_data(self, conn, msg):
         """Store sensor data in Neon database."""
