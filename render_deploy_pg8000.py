@@ -546,8 +546,10 @@ class RenderPG8000MQTTBridge:
                 time.sleep(60)
 
     def run_flask(self):
-        """Run Flask server in separate thread."""
-        self.app.run(host='0.0.0.0', port=self.port, debug=False, use_reloader=False)
+        """Run Flask server with Gunicorn in production or Flask dev server locally."""
+        # For Render.com, Gunicorn will be used via command line
+        # This method is for local development or fallback
+        self.app.run(host='0.0.0.0', port=self.port, debug=False, use_reloader=False, threaded=True)
     
     def run_bridge(self):
         """Main bridge loop with batch processing."""
@@ -586,5 +588,30 @@ class RenderPG8000MQTTBridge:
 # Create bridge instance
 bridge = RenderPG8000MQTTBridge()
 
+# Start background threads immediately (for Gunicorn)
+import atexit
+
+def start_background_threads():
+    """Start MQTT and keep-alive threads for Gunicorn."""
+    # Start background batch processor
+    batch_thread = threading.Thread(target=bridge.batch_processor, daemon=True)
+    batch_thread.start()
+    
+    # Start keep-alive thread (NON-DAEMON for reliability)
+    keepalive_thread = threading.Thread(target=bridge.keepalive_checker, daemon=False)
+    keepalive_thread.start()
+    
+    # Connect to MQTT
+    bridge.connect_mqtt()
+    
+    logger.info("🚀 Render.com: Background threads started for Gunicorn")
+
+# Start threads when module is loaded (for Gunicorn workers)
+start_background_threads()
+
+# Export Flask app for Gunicorn
+app = bridge.app
+
 if __name__ == "__main__":
+    # Direct execution (development mode)
     bridge.run_bridge()
