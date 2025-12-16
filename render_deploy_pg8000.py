@@ -50,6 +50,8 @@ class RenderPG8000MQTTBridge:
         self.db_connection_params = None
         self.mqtt_client = None
         self.connected = False
+        self.connecting = False  # Lock to prevent multiple connection attempts
+        self.mqtt_lock = threading.Lock()  # Thread lock for MQTT operations
         self.running = True
         self.message_queue = []
         self.last_activity = time.time()
@@ -440,7 +442,18 @@ class RenderPG8000MQTTBridge:
             logger.warning(f"🚨 Render.com Alert: {severity} - {message}")
     
     def connect_mqtt(self):
-        """Connect to MQTT broker."""
+        """Connect to MQTT broker with thread-safe locking."""
+        # Prevent multiple simultaneous connection attempts
+        with self.mqtt_lock:
+            if self.connecting:
+                logger.info("⏳ Render.com: MQTT connection already in progress, skipping...")
+                return False
+            if self.connected:
+                logger.info("✅ Render.com: MQTT already connected, skipping...")
+                return True
+            
+            self.connecting = True
+        
         try:
             logger.info(f"🔗 Render.com: Connecting to MQTT {self.broker}:{self.mqtt_port}")
             # Stop any existing loop before reconnecting
@@ -451,11 +464,17 @@ class RenderPG8000MQTTBridge:
             
             self.mqtt_client.connect(self.broker, self.mqtt_port, 60)
             self.mqtt_client.loop_start()
+            
+            # Wait briefly for connection callback
+            time.sleep(2)
             return True
         except Exception as e:
             logger.error(f"❌ Render.com: MQTT connection failed: {e}")
             self.connected = False
             return False
+        finally:
+            with self.mqtt_lock:
+                self.connecting = False
     
     def batch_processor(self):
         """Background batch processor for MQTT messages."""
