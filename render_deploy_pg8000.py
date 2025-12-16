@@ -56,7 +56,7 @@ class RenderPG8000MQTTBridge:
         self.batch_size = 20
         self.batch_timeout = 2
         self.last_keepalive = time.time()
-        self.keepalive_interval = 300  # 5 minutes
+        self.keepalive_interval = 180  # 3 minutes (more aggressive to prevent sleep)
         
         # MQTT connection parameters
         self.broker = self.mqtt_broker
@@ -360,7 +360,7 @@ class RenderPG8000MQTTBridge:
         
         # Ensure device exists
         conn.run("""
-            INSERT INTO "Device" (device_id, device_name, location, device_type)
+            INSERT INTO devices (device_id, device_name, location, device_type)
             VALUES (:device_id, :device_name, :location, :device_type)
             ON CONFLICT (device_id) DO UPDATE SET
                 last_seen = CURRENT_TIMESTAMP,
@@ -375,7 +375,7 @@ class RenderPG8000MQTTBridge:
         
         # Insert sensor reading
         conn.run("""
-            INSERT INTO "SensorReading" (
+            INSERT INTO sensor_readings (
                 device_id, timestamp, esp_timestamp_raw,
                 ambient_temp, condenser_temp, evap_temp, supply_air_temp, return_air_temp,
                 comp_current, fan_current, evap_fan_current, airflow_velocity, pressure,
@@ -401,7 +401,7 @@ class RenderPG8000MQTTBridge:
         device_id = msg['device_id']
         
         conn.run("""
-            INSERT INTO "Device" (device_id, device_name, location, device_type)
+            INSERT INTO devices (device_id, device_name, location, device_type)
             VALUES (:device_id, :device_name, :location, :device_type)
             ON CONFLICT (device_id) DO UPDATE SET
                 last_seen = CURRENT_TIMESTAMP,
@@ -432,7 +432,7 @@ class RenderPG8000MQTTBridge:
         # Insert alerts
         for alert_type, severity, message, value, threshold in alerts:
             conn.run("""
-                INSERT INTO "SystemAlert" (device_id, alert_type, severity, message, value, threshold)
+                INSERT INTO system_alerts (device_id, alert_type, severity, message, value, threshold)
                 VALUES (:device_id, :alert_type, :severity, :message, :value, :threshold)
             """, device_id=device_id, alert_type=alert_type, severity=severity, 
                  message=message, value=value, threshold=threshold)
@@ -530,22 +530,51 @@ class RenderPG8000MQTTBridge:
         self.app.run(host='0.0.0.0', port=self.port, debug=False)
 
     def keepalive_checker(self):
-        """Background thread to send keep-alive requests every 5 minutes."""
+        """Background thread to send keep-alive requests every 3 minutes (more aggressive)."""
+        import requests
+        consecutive_failures = 0
+        max_failures = 3
+        
         while True:
             try:
                 current_time = time.time()
                 if current_time - self.last_keepalive >= self.keepalive_interval:
                     logger.info("💓 Render.com: Sending keep-alive to prevent sleep")
-                    # Self-ping to keep service awake
-                    import requests
+                    
+                    # Try both localhost and external URL for redundancy
+                    success = False
+                    
+                    # Try 1: Local ping
                     try:
-                        requests.get(f"http://localhost:{self.port}/health", timeout=5)
+                        response = requests.get(f"http://localhost:{self.port}/health", timeout=5)
+                        if response.status_code == 200:
+                            success = True
+                            logger.info("✅ Keep-alive: Local ping successful")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Keep-alive: Local ping failed: {e}")
+                    
+                    # Try 2: External ping (if local fails)
+                    if not success:
+                        try:
+                            response = requests.get("https://hvac-mqtt-bridge.onrender.com/wake", timeout=10)
+                            if response.status_code == 200:
+                                success = True
+                                logger.info("✅ Keep-alive: External ping successful")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Keep-alive: External ping failed: {e}")
+                    
+                    if success:
                         self.last_keepalive = current_time
-                    except:
-                        # If local request fails, just update timestamp
-                        self.last_keepalive = current_time
+                        consecutive_failures = 0
+                    else:
+                        consecutive_failures += 1
+                        logger.error(f"❌ Keep-alive: Both pings failed (failure #{consecutive_failures})")
+                        
+                        if consecutive_failures >= max_failures:
+                            logger.critical("🚨 Keep-alive: Multiple failures detected - service may be unhealthy")
                 
                 time.sleep(60)  # Check every minute
+                
             except Exception as e:
                 logger.error(f"❌ Keep-alive error: {e}")
                 time.sleep(60)
