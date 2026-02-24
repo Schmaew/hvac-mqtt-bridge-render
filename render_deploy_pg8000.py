@@ -325,12 +325,11 @@ class RenderPG8000MQTTBridge:
         device_id = msg['device_id']
         data = msg['payload']
         
-        # Map ESP32 field names to database column names
+        # Map ESP32 field names to database column names (removed: fan_current, supply_air_temp, return_air_temp)
         field_mapping = {
             'temp_am': 'ambient_temp',
             'temp_c': 'condenser_temp',
             'current_c': 'comp_current',
-            'current_f': 'fan_current',
             'airflow': 'airflow_velocity',
             'press': 'pressure',
             'vibra_amp': 'vibration_amp',
@@ -339,8 +338,6 @@ class RenderPG8000MQTTBridge:
             'dust': 'dust_concentration',
             'evap_f': 'evap_fan_current',
             'evap_t': 'evap_temp',
-            'supply_air': 'supply_air_temp',
-            'return_air': 'return_air_temp',
             'humidity': 'dht22_humidity',
             'bmp_temp': 'bmp280_temperature',
             'bmp_alt': 'bmp280_altitude'
@@ -352,8 +349,8 @@ class RenderPG8000MQTTBridge:
             mapped_data[db_field] = data.get(esp_field)
         
         # Also check for direct database field names (for compatibility)
-        for db_field in ['ambient_temp', 'condenser_temp', 'evap_temp', 'supply_air_temp', 
-                         'return_air_temp', 'comp_current', 'fan_current', 'evap_fan_current',
+        for db_field in ['ambient_temp', 'condenser_temp', 'evap_temp',
+                         'comp_current', 'evap_fan_current',
                          'airflow_velocity', 'pressure', 'vibration_amp', 'vibration_freq',
                          'sound_level', 'dust_concentration', 'refrigerant_flow', 'dht22_humidity',
                          'bmp280_temperature', 'bmp280_altitude', 'bmp280_pressure']:
@@ -375,25 +372,30 @@ class RenderPG8000MQTTBridge:
         timestamp = self._parse_timestamp(timestamp_value)
         raw_timestamp = str(timestamp_value or '')
         
-        # Insert sensor reading
-        conn.run("""
-            INSERT INTO sensor_readings (
-                device_id, timestamp, esp_timestamp_raw,
-                ambient_temp, condenser_temp, evap_temp, supply_air_temp, return_air_temp,
-                comp_current, fan_current, evap_fan_current, airflow_velocity, pressure,
-                vibration_amp, vibration_freq, sound_level, dust_concentration, refrigerant_flow,
-                dht22_humidity, bmp280_temperature, bmp280_altitude, bmp280_pressure
-            ) VALUES (
-                :device_id, :timestamp, :esp_timestamp_raw,
-                :ambient_temp, :condenser_temp, :evap_temp, :supply_air_temp, :return_air_temp,
-                :comp_current, :fan_current, :evap_fan_current, :airflow_velocity, :pressure,
-                :vibration_amp, :vibration_freq, :sound_level, :dust_concentration, :refrigerant_flow,
-                :dht22_humidity, :bmp280_temperature, :bmp280_altitude, :bmp280_pressure
+        # Insert sensor reading (removed: supply_air_temp, return_air_temp, fan_current)
+        try:
+            conn.run("""
+                INSERT INTO sensor_readings (
+                    device_id, timestamp, esp_timestamp_raw,
+                    ambient_temp, condenser_temp, evap_temp,
+                    comp_current, evap_fan_current, airflow_velocity, pressure,
+                    vibration_amp, vibration_freq, sound_level, dust_concentration, refrigerant_flow,
+                    dht22_humidity, bmp280_temperature, bmp280_altitude, bmp280_pressure
+                ) VALUES (
+                    :device_id, :timestamp, :esp_timestamp_raw,
+                    :ambient_temp, :condenser_temp, :evap_temp,
+                    :comp_current, :evap_fan_current, :airflow_velocity, :pressure,
+                    :vibration_amp, :vibration_freq, :sound_level, :dust_concentration, :refrigerant_flow,
+                    :dht22_humidity, :bmp280_temperature, :bmp280_altitude, :bmp280_pressure
+                )
+            """, 
+                device_id=device_id, timestamp=timestamp, esp_timestamp_raw=raw_timestamp,
+                **mapped_data
             )
-        """, 
-            device_id=device_id, timestamp=timestamp, esp_timestamp_raw=raw_timestamp,
-            **mapped_data
-        )
+            logger.info(f"✅ Render.com: Stored sensor data for {device_id}")
+        except Exception as insert_error:
+            logger.error(f"❌ Render.com: INSERT failed for {device_id}: {insert_error}")
+            raise
         
         # Check for alerts
         self._check_alerts(conn, device_id, data)
