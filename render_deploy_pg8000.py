@@ -357,9 +357,9 @@ class RenderPG8000MQTTBridge:
             if db_field not in mapped_data or mapped_data[db_field] is None:
                 mapped_data[db_field] = data.get(db_field)
         
-        # Ensure device exists (Prisma table: "Device")
+        # Ensure device exists
         conn.run("""
-            INSERT INTO "Device" (device_id, device_name, location, device_type)
+            INSERT INTO devices (device_id, device_name, location, device_type)
             VALUES (:device_id, :device_name, :location, :device_type)
             ON CONFLICT (device_id) DO UPDATE SET
                 last_seen = CURRENT_TIMESTAMP,
@@ -375,7 +375,7 @@ class RenderPG8000MQTTBridge:
         # Insert sensor reading into "SensorReading" table (Prisma naming)
         try:
             conn.run("""
-                INSERT INTO "SensorReading" (
+                INSERT INTO sensor_readings (
                     device_id, timestamp,
                     ambient_temp, condenser_temp, evap_temp,
                     comp_current, evap_fan_current, airflow_velocity, pressure,
@@ -405,7 +405,7 @@ class RenderPG8000MQTTBridge:
         device_id = msg['device_id']
         
         conn.run("""
-            INSERT INTO "Device" (device_id, device_name, location, device_type)
+            INSERT INTO devices (device_id, device_name, location, device_type)
             VALUES (:device_id, :device_name, :location, :device_type)
             ON CONFLICT (device_id) DO UPDATE SET
                 last_seen = CURRENT_TIMESTAMP,
@@ -436,7 +436,7 @@ class RenderPG8000MQTTBridge:
         # Insert alerts
         for alert_type, severity, message, value, threshold in alerts:
             conn.run("""
-                INSERT INTO "SystemAlert" (device_id, alert_type, severity, message, value, threshold)
+                INSERT INTO system_alerts (device_id, alert_type, severity, message, value, threshold)
                 VALUES (:device_id, :alert_type, :severity, :message, :value, :threshold)
             """, device_id=device_id, alert_type=alert_type, severity=severity, 
                  message=message, value=value, threshold=threshold)
