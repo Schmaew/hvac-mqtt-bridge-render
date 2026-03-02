@@ -325,19 +325,16 @@ class RenderPG8000MQTTBridge:
         device_id = msg['device_id']
         data = msg['payload']
         
-        # Map ESP32 field names to database column names (removed: fan_current, supply_air_temp, return_air_temp)
+        # Map ESP32 field names to database column names
+        # Removed: condenser_temp, evap_temp, fan_current, refrigerant_flow, supply_air_temp, return_air_temp
         field_mapping = {
             'temp_am': 'ambient_temp',
-            'temp_c': 'condenser_temp',
             'current_c': 'comp_current',
             'airflow': 'airflow_velocity',
-            'press': 'pressure',
+            'press': 'bmp280_pressure',
             'vibra_amp': 'vibration_amp',
             'vibra_freq': 'vibration_freq',
-            'refri_flow': 'refrigerant_flow',
             'dust': 'dust_concentration',
-            'evap_f': 'evap_fan_current',
-            'evap_t': 'evap_temp',
             'humidity': 'dht22_humidity',
             'bmp_temp': 'bmp280_temperature',
             'bmp_alt': 'bmp280_altitude'
@@ -349,11 +346,10 @@ class RenderPG8000MQTTBridge:
             mapped_data[db_field] = data.get(esp_field)
         
         # Also check for direct database field names (for compatibility)
-        for db_field in ['ambient_temp', 'condenser_temp', 'evap_temp',
-                         'comp_current', 'evap_fan_current',
-                         'airflow_velocity', 'pressure', 'vibration_amp', 'vibration_freq',
-                         'sound_level', 'dust_concentration', 'refrigerant_flow', 'dht22_humidity',
-                         'bmp280_temperature', 'bmp280_altitude', 'bmp280_pressure']:
+        for db_field in ['ambient_temp', 'comp_current',
+                         'airflow_velocity', 'bmp280_pressure', 'vibration_amp', 'vibration_freq',
+                         'sound_level', 'dust_concentration', 'dht22_humidity',
+                         'bmp280_temperature', 'bmp280_altitude']:
             if db_field not in mapped_data or mapped_data[db_field] is None:
                 mapped_data[db_field] = data.get(db_field)
         
@@ -372,21 +368,21 @@ class RenderPG8000MQTTBridge:
         timestamp = self._parse_timestamp(timestamp_value)
         raw_timestamp = str(timestamp_value or '')
         
-        # Insert sensor reading into "SensorReading" table (Prisma naming)
+        # Insert sensor reading into sensor_readings table
         try:
             conn.run("""
                 INSERT INTO sensor_readings (
                     device_id, timestamp,
-                    ambient_temp, condenser_temp, evap_temp,
-                    comp_current, evap_fan_current, airflow_velocity, pressure,
-                    vibration_amp, vibration_freq, sound_level, dust_concentration, refrigerant_flow,
-                    dht22_humidity, bmp280_temperature, bmp280_altitude, bmp280_pressure
+                    ambient_temp, comp_current,
+                    airflow_velocity, bmp280_pressure, vibration_amp, vibration_freq,
+                    sound_level, dust_concentration,
+                    dht22_humidity, bmp280_temperature, bmp280_altitude
                 ) VALUES (
                     :device_id, :timestamp,
-                    :ambient_temp, :condenser_temp, :evap_temp,
-                    :comp_current, :evap_fan_current, :airflow_velocity, :pressure,
-                    :vibration_amp, :vibration_freq, :sound_level, :dust_concentration, :refrigerant_flow,
-                    :dht22_humidity, :bmp280_temperature, :bmp280_altitude, :bmp280_pressure
+                    :ambient_temp, :comp_current,
+                    :airflow_velocity, :bmp280_pressure, :vibration_amp, :vibration_freq,
+                    :sound_level, :dust_concentration,
+                    :dht22_humidity, :bmp280_temperature, :bmp280_altitude
                 )
             """, 
                 device_id=device_id, timestamp=timestamp,
@@ -422,8 +418,9 @@ class RenderPG8000MQTTBridge:
         if data.get('ambient_temp', 0) > 35:
             alerts.append(("HIGH_TEMP", "CRITICAL", f"High ambient temperature: {data['ambient_temp']}°C", data['ambient_temp'], 35))
         
-        if data.get('condenser_temp', 0) > 75:
-            alerts.append(("HIGH_TEMP", "WARNING", f"High condenser temperature: {data['condenser_temp']}°C", data['condenser_temp'], 75))
+        # BMP280 temperature alert (was condenser_temp)
+        if data.get('bmp280_temperature', 0) > 75:
+            alerts.append(("HIGH_TEMP", "WARNING", f"High BMP280 temperature: {data['bmp280_temperature']}°C", data['bmp280_temperature'], 75))
         
         # Current alerts
         if data.get('comp_current', 0) > 30:
