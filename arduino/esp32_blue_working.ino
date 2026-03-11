@@ -928,36 +928,8 @@ void readAllSensors() {
   }  
 }
 
-// Mock condenser_temp based on bmp_temperature with time-based offset
-// Afternoon (12-17): +5 to +8°C, Morning/Evening: +2 to +5°C, Night: -2 to +2°C
-float getMockCondenserTemp() {
-  struct tm timeinfo;
-  int hour = 12; // Default to noon if NTP fails
-  
-  if (getLocalTime(&timeinfo)) {
-    hour = timeinfo.tm_hour;
-  }
-  
-  float baseTemp = bmp_temperature;
-  float offset = 0.0;
-  
-  // Time-based offset calculation (Thailand time GMT+7)
-  if (hour >= 12 && hour < 17) {
-    // Afternoon: hottest outside, condenser works harder (+5 to +8)
-    offset = 5.0 + (random(0, 30) / 10.0); // 5.0 to 8.0
-  } else if ((hour >= 9 && hour < 12) || (hour >= 17 && hour < 20)) {
-    // Morning/Evening: moderate (+2 to +5)
-    offset = 2.0 + (random(0, 30) / 10.0); // 2.0 to 5.0
-  } else {
-    // Night: cooler outside, less offset (-2 to +2)
-    offset = -2.0 + (random(0, 40) / 10.0); // -2.0 to 2.0
-  }
-  
-  return baseTemp + offset;
-}
-
 String createHVACJSON() {
-  StaticJsonDocument<640> doc;  // Increased size for condenser_temp
+  StaticJsonDocument<512> doc;  // Reduced size after removing unused fields
   
   // Device info
   doc["device_id"] = device_id;
@@ -966,7 +938,6 @@ String createHVACJSON() {
   
   // HVAC Parameters (active sensors only)
   doc["ambient_temp"] = roundf(ambient_temp * 10) / 10.0;
-  doc["condenser_temp"] = roundf(getMockCondenserTemp() * 10) / 10.0;  // Mock data - sensor broken
   doc["comp_current"] = roundf(comp_current * 100) / 100.0;
   doc["airflow_velocity"] = roundf(airflow_velocity * 10) / 10.0;
   doc["bmp280_pressure"] = roundf(bmp_pressure * 10) / 10.0;

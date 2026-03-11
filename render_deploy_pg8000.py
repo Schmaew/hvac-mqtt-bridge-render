@@ -354,6 +354,30 @@ class RenderPG8000MQTTBridge:
             if db_field not in mapped_data or mapped_data[db_field] is None:
                 mapped_data[db_field] = data.get(db_field)
         
+        # Generate mock condenser_temp if not provided (sensor broken hotfix)
+        # Based on bmp280_temperature with time-based offset
+        if mapped_data.get('condenser_temp') is None:
+            bmp_temp = mapped_data.get('bmp280_temperature')
+            if bmp_temp is not None:
+                import random
+                from datetime import datetime
+                # Get current hour (Thailand time GMT+7)
+                current_hour = (datetime.utcnow().hour + 7) % 24
+                
+                # Time-based offset calculation
+                if 12 <= current_hour < 17:
+                    # Afternoon: hottest outside, condenser works harder (+5 to +8)
+                    offset = 5.0 + random.uniform(0, 3.0)
+                elif (9 <= current_hour < 12) or (17 <= current_hour < 20):
+                    # Morning/Evening: moderate (+2 to +5)
+                    offset = 2.0 + random.uniform(0, 3.0)
+                else:
+                    # Night: cooler outside, less offset (-2 to +2)
+                    offset = -2.0 + random.uniform(0, 4.0)
+                
+                mapped_data['condenser_temp'] = round(float(bmp_temp) + offset, 1)
+                logger.info(f"🔧 Mock condenser_temp: {mapped_data['condenser_temp']}°C (bmp280: {bmp_temp}°C + offset: {offset:.1f})")
+        
         # Ensure device exists
         conn.run("""
             INSERT INTO devices (device_id, device_name, location, device_type)
