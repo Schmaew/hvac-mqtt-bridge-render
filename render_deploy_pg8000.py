@@ -326,9 +326,10 @@ class RenderPG8000MQTTBridge:
         data = msg['payload']
         
         # Map ESP32 field names to database column names
-        # Removed: condenser_temp, evap_temp, fan_current, refrigerant_flow, supply_air_temp, return_air_temp
+        # Removed: evap_temp, fan_current, refrigerant_flow, supply_air_temp, return_air_temp
         field_mapping = {
             'temp_am': 'ambient_temp',
+            'temp_cond': 'condenser_temp',
             'current_c': 'comp_current',
             'airflow': 'airflow_velocity',
             'press': 'bmp280_pressure',
@@ -346,7 +347,7 @@ class RenderPG8000MQTTBridge:
             mapped_data[db_field] = data.get(esp_field)
         
         # Also check for direct database field names (for compatibility)
-        for db_field in ['ambient_temp', 'comp_current',
+        for db_field in ['ambient_temp', 'condenser_temp', 'comp_current',
                          'airflow_velocity', 'bmp280_pressure', 'vibration_amp', 'vibration_freq',
                          'sound_level', 'dust_concentration', 'dht22_humidity',
                          'bmp280_temperature', 'bmp280_altitude']:
@@ -373,13 +374,13 @@ class RenderPG8000MQTTBridge:
             conn.run("""
                 INSERT INTO sensor_readings (
                     device_id, timestamp,
-                    ambient_temp, comp_current,
+                    ambient_temp, condenser_temp, comp_current,
                     airflow_velocity, bmp280_pressure, vibration_amp, vibration_freq,
                     sound_level, dust_concentration,
                     dht22_humidity, bmp280_temperature, bmp280_altitude
                 ) VALUES (
                     :device_id, :timestamp,
-                    :ambient_temp, :comp_current,
+                    :ambient_temp, :condenser_temp, :comp_current,
                     :airflow_velocity, :bmp280_pressure, :vibration_amp, :vibration_freq,
                     :sound_level, :dust_concentration,
                     :dht22_humidity, :bmp280_temperature, :bmp280_altitude
