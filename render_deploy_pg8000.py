@@ -9,6 +9,8 @@ import threading
 import time
 import logging
 import os
+import random
+import requests
 from datetime import datetime
 from dateutil import parser
 import paho.mqtt.client as mqtt
@@ -54,6 +56,8 @@ class RenderPG8000MQTTBridge:
         self.mqtt_lock = threading.Lock()  # Thread lock for MQTT operations
         self.running = True
         self.message_queue = []
+        self.message_queue_lock = threading.Lock()  # Thread-safe queue access
+        self.max_queue_size = 1000  # Prevent memory leak
         self.last_activity = time.time()
         self.batch_size = 20
         self.batch_timeout = 2
@@ -262,13 +266,17 @@ class RenderPG8000MQTTBridge:
                 
                 logger.info(f"📨 Render.com: Received {message_type} from {device_id}")
                 
-                # Add to queue for batch processing
-                self.message_queue.append({
-                    'device_id': device_id,
-                    'message_type': message_type,
-                    'payload': payload,
-                    'timestamp': datetime.utcnow()
-                })
+                # Add to queue with thread safety and size limit
+                with self.message_queue_lock:
+                    if len(self.message_queue) < self.max_queue_size:
+                        self.message_queue.append({
+                            'device_id': device_id,
+                            'message_type': message_type,
+                            'payload': payload,
+                            'timestamp': datetime.utcnow()
+                        })
+                    else:
+                        logger.warning(f"⚠️ Queue full ({self.max_queue_size}), dropping message from {device_id}")
                 
         except Exception as e:
             logger.error(f"❌ Render.com: Error processing message: {e}")
@@ -359,8 +367,6 @@ class RenderPG8000MQTTBridge:
         if mapped_data.get('condenser_temp') is None:
             bmp_temp = mapped_data.get('bmp280_temperature')
             if bmp_temp is not None:
-                import random
-                from datetime import datetime
                 # Get current hour (Thailand time GMT+7)
                 current_hour = (datetime.utcnow().hour + 7) % 24
                 
@@ -501,32 +507,49 @@ class RenderPG8000MQTTBridge:
                 self.connecting = False
     
     def batch_processor(self):
-        """Background batch processor for MQTT messages."""
+        """Background batch processor for MQTT messages with crash recovery."""
         last_batch_time = time.time()
         last_reconnect_attempt = 0
         reconnect_delay = 30  # Wait 30 seconds between reconnection attempts
+        crash_count = 0
+        max_crashes = 10
         
         while self.running:
-            current_time = time.time()
-            
-            # Process batch when queue is full or timeout reached
-            if (len(self.message_queue) >= self.batch_size or 
-                (self.message_queue and current_time - last_batch_time >= self.batch_timeout)):
+            try:
+                current_time = time.time()
                 
-                batch = self.message_queue[:self.batch_size]
-                self.message_queue = self.message_queue[self.batch_size:]
+                # Process batch when queue is full or timeout reached (thread-safe)
+                batch = []
+                with self.message_queue_lock:
+                    queue_len = len(self.message_queue)
+                    if (queue_len >= self.batch_size or 
+                        (queue_len > 0 and current_time - last_batch_time >= self.batch_timeout)):
+                        batch = self.message_queue[:self.batch_size]
+                        self.message_queue = self.message_queue[self.batch_size:]
                 
-                self._process_batch(batch)
-                last_batch_time = current_time
-            
-            # Reconnect MQTT if disconnected (with delay to prevent spam)
-            if not self.connected and self.running:
-                if current_time - last_reconnect_attempt >= reconnect_delay:
-                    logger.info("🔄 Render.com: Reconnecting MQTT...")
-                    self.connect_mqtt()
-                    last_reconnect_attempt = current_time
-            
-            time.sleep(0.1)
+                if batch:
+                    self._process_batch(batch)
+                    last_batch_time = current_time
+                    crash_count = 0  # Reset on success
+                
+                # Reconnect MQTT if disconnected (with delay to prevent spam)
+                if not self.connected and self.running:
+                    if current_time - last_reconnect_attempt >= reconnect_delay:
+                        logger.info("🔄 Render.com: Reconnecting MQTT...")
+                        self.connect_mqtt()
+                        last_reconnect_attempt = current_time
+                
+                time.sleep(0.1)
+                
+            except Exception as e:
+                crash_count += 1
+                logger.error(f"❌ Batch processor error #{crash_count}: {e}")
+                if crash_count >= max_crashes:
+                    logger.critical(f"🚨 Batch processor crashed {max_crashes} times, pausing for 60s")
+                    time.sleep(60)
+                    crash_count = 0
+                else:
+                    time.sleep(1)  # Brief pause before retry
     
     def run_bridge_task(self):
         """Run the bridge processing task in background thread."""
@@ -574,11 +597,10 @@ class RenderPG8000MQTTBridge:
 
     def keepalive_checker(self):
         """Background thread to send keep-alive requests every 3 minutes (more aggressive)."""
-        import requests
         consecutive_failures = 0
-        max_failures = 3
+        max_failures = 5
         
-        while True:
+        while self.running:
             try:
                 current_time = time.time()
                 if current_time - self.last_keepalive >= self.keepalive_interval:
