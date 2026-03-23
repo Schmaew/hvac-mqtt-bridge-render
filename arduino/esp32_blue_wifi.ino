@@ -117,6 +117,8 @@ typedef struct sensor_data {
 sensor_data receivedData;
 bool dataReceived = false;
 unsigned long receiveCount = 0;
+unsigned long lastEspNowReceive = 0;  // Track when ESP-NOW data arrived
+const unsigned long espNowTimeout = 30000;  // Wait up to 30 seconds for ESP-NOW data
 
 void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
   receiveCount++;
@@ -137,6 +139,7 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
   
   memcpy(&receivedData, incomingData, sizeof(receivedData));
   dataReceived = true;
+  lastEspNowReceive = millis();  // Mark when data arrived
   
   Serial.printf("📊 Temp: %.2f°C, Press: %.2f hPa, Dust: %.1f µg/m³, Avg: %.1f µg/m³, ID: %d\n",
                 receivedData.temperature, 
@@ -1080,6 +1083,8 @@ void debugSystemStatus() {
 unsigned long lastPublish = 0;
 bool firstRun = true;
 const unsigned long publishInterval = 300000; // 5 นาที
+bool waitingForEspNow = false;
+unsigned long waitStartTime = 0;
 
 void loop() {
   // 1. Check WiFi
@@ -1108,16 +1113,54 @@ void loop() {
   }
   mqtt_client.loop();
 
-  // 3. Normal tasks — ทำทุก 5 นาที
+  // 3. Data collection and publish — ทุก 5 นาที
   unsigned long currentMillis = millis();
   
   if (firstRun || (currentMillis - lastPublish >= publishInterval)) {
-    lastPublish = currentMillis;
-    firstRun = false;
     
-    readAllSensors();
-    publishHVACData();
-    debugSystemStatus();
+    // Start waiting for ESP-NOW data
+    if (!waitingForEspNow) {
+      waitingForEspNow = true;
+      waitStartTime = currentMillis;
+      dataReceived = false;  // Reset flag to wait for fresh data
+      Serial.println("\n⏳ Waiting for ESP-NOW data from sender...");
+    }
+    
+    // Check if ESP-NOW data arrived or timeout
+    bool espNowReady = dataReceived && (currentMillis - lastEspNowReceive < 60000);  // Fresh data within 1 min
+    bool timeout = (currentMillis - waitStartTime >= espNowTimeout);
+    
+    if (espNowReady || timeout) {
+      if (espNowReady) {
+        Serial.println("✅ ESP-NOW data received! Combining with local sensors...");
+      } else {
+        Serial.println("⚠️ ESP-NOW timeout - publishing with available data...");
+      }
+      
+      // Reset waiting state
+      waitingForEspNow = false;
+      lastPublish = currentMillis;
+      firstRun = false;
+      
+      // Read local sensors and combine with ESP-NOW data
+      readAllSensors();
+      
+      // Publish combined data
+      publishHVACData();
+      debugSystemStatus();
+      
+      Serial.printf("📊 Data sources: ESP-NOW=%s, Local=✅\n", 
+                    espNowReady ? "✅" : "❌(timeout)");
+    } else {
+      // Still waiting - show progress every 5 seconds
+      static unsigned long lastWaitPrint = 0;
+      if (currentMillis - lastWaitPrint >= 5000) {
+        lastWaitPrint = currentMillis;
+        Serial.printf("   ⏳ Waiting... %lu/%lu seconds\n", 
+                      (currentMillis - waitStartTime) / 1000, 
+                      espNowTimeout / 1000);
+      }
+    }
   }
 
   // 4. Heartbeat
